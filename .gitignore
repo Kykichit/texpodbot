@@ -1,0 +1,55 @@
+# Local env
+.env
+.env.*
+!.env.example
+!.env.local.example
+!.env.demo.example
+!.env.compose-check.example
+!.env.production.example
+!.env.vps.example
+!.env.vps.compose-check.example
+!.env.chatwoot.production.example
+!.env.chatwoot.compose-check.example
+
+# Python/cache
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp-*/
+pytest-cache-files-*/
+.ruff_cache/
+.mypy_cache/
+.mypy_cache_check/
+.coverage
+coverage.xml
+htmlcov/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Editor/OS
+.idea/
+.vscode/
+
+# Local/AI assistant artifacts
+.codex/
+.claude/
+.cursor/
+.aider*
+AGENTS.md
+agents.md
+agent.md
+CLAUDE.md
+chatgpt-*.md
+codex-*.md
+prompt-*.md
+prompts/
+scratch/
+tmp/
+tmp*/
+temp/
+debug/
+*.log

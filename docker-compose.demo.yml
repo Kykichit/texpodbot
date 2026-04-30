@@ -1,0 +1,94 @@
+services:
+  demo-app:
+    build: .
+    command: python -m app.main serve-webhook
+    environment:
+      APP_ENV: ${APP_ENV:-demo}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      BOT_MODE: ${BOT_MODE:-telegram}
+      DB_SCHEME: ${DB_SCHEME:-postgresql+asyncpg}
+      DB_HOST: demo-postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-support_demo}
+      DB_USER: ${DB_USER:-support_demo}
+      DB_PASSWORD: ${DB_PASSWORD:-support_demo}
+      DATABASE_URL: ${DATABASE_URL:-}
+      REDIS_SCHEME: ${REDIS_SCHEME:-redis}
+      REDIS_HOST: demo-redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_URL: ${REDIS_URL:-}
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 8080
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-0000000000:demo_token_not_real}
+      TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL:-}
+      TELEGRAM_SUPPORT_GROUP_ID: ${TELEGRAM_SUPPORT_GROUP_ID:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-demo-webhook-secret}
+      TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+      MAX_API_BASE_URL: ${MAX_API_BASE_URL:-https://platform-api.max.ru}
+      WEBHOOK_BASE_URL: ${WEBHOOK_BASE_URL:-}
+      EXTERNAL_API_TIMEOUT_SECONDS: ${EXTERNAL_API_TIMEOUT_SECONDS:-10}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_REPO: ${GITHUB_REPO:-}
+      CHATWOOT_ENABLED: ${CHATWOOT_ENABLED:-false}
+      CHATWOOT_BASE_URL: ${CHATWOOT_BASE_URL:-}
+      CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN:-}
+      CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-}
+      CHATWOOT_INBOX_ID: ${CHATWOOT_INBOX_ID:-}
+      CHATWOOT_WEBHOOK_SECRET: ${CHATWOOT_WEBHOOK_SECRET:-}
+      CHATWOOT_ALLOW_UNSIGNED_LOCAL_WEBHOOKS: ${CHATWOOT_ALLOW_UNSIGNED_LOCAL_WEBHOOKS:-false}
+      LIVE_TESTS_ENABLED: ${LIVE_TESTS_ENABLED:-false}
+    ports:
+      - "18080:8080"
+    depends_on:
+      demo-postgres:
+        condition: service_healthy
+      demo-redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; [urllib.request.urlopen(url, timeout=2).read() for url in ('http://127.0.0.1:8080/health', 'http://127.0.0.1:8080/ready')]\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+  demo-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-support_demo}
+      POSTGRES_USER: ${DB_USER:-support_demo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-support_demo}
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - taskbot_demo_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  demo-redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    volumes:
+      - taskbot_demo_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  taskbot_demo_postgres_data:
+  taskbot_demo_redis_data:

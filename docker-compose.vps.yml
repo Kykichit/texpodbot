@@ -1,0 +1,185 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      BOT_DOMAIN: ${BOT_DOMAIN:?Set BOT_DOMAIN}
+      CHATWOOT_DOMAIN: ${CHATWOOT_DOMAIN:?Set CHATWOOT_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+      chatwoot-rails:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - private
+    restart: unless-stopped
+
+  app:
+    image: ${TASKBOT_IMAGE:-taskbot:local}
+    build: .
+    env_file:
+      - path: ${VPS_ENV_FILE:-.env.vps}
+        required: false
+    environment:
+      DB_SCHEME: postgresql+asyncpg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${TASKBOT_DB:-taskbot}
+      DB_USER: ${TASKBOT_DB_USER:-taskbot}
+      DB_PASSWORD: ${TASKBOT_DB_PASSWORD:?Set TASKBOT_DB_PASSWORD}
+      DATABASE_URL: ""
+      REDIS_SCHEME: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ""
+      REDIS_URL: ""
+      APP_VERSION: ${APP_VERSION:-unknown}
+      APP_COMMIT: ${APP_COMMIT:-unknown}
+      WEBHOOK_BASE_URL: https://${BOT_DOMAIN:?Set BOT_DOMAIN}
+      TELEGRAM_WEBHOOK_URL: https://${BOT_DOMAIN:?Set BOT_DOMAIN}/telegram/webhook
+      CHATWOOT_BASE_URL: https://${CHATWOOT_DOMAIN:?Set CHATWOOT_DOMAIN}
+    command: python -m app.main serve-webhook
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; [urllib.request.urlopen(url, timeout=2).read() for url in ('http://127.0.0.1:8080/health', 'http://127.0.0.1:8080/ready')]\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - private
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPER_PASSWORD:?Set POSTGRES_SUPER_PASSWORD}
+      TASKBOT_DB: ${TASKBOT_DB:-taskbot}
+      TASKBOT_DB_USER: ${TASKBOT_DB_USER:-taskbot}
+      TASKBOT_DB_PASSWORD: ${TASKBOT_DB_PASSWORD:?Set TASKBOT_DB_PASSWORD}
+      CHATWOOT_DB: ${CHATWOOT_DB:-chatwoot}
+      CHATWOOT_DB_USER: ${CHATWOOT_DB_USER:-chatwoot}
+      CHATWOOT_DB_PASSWORD: ${CHATWOOT_DB_PASSWORD:?Set CHATWOOT_DB_PASSWORD}
+    volumes:
+      - allinone_postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - private
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - allinone_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - private
+    restart: unless-stopped
+
+  chatwoot-rails:
+    image: ${CHATWOOT_IMAGE:-chatwoot/chatwoot:v4.1.0}
+    env_file:
+      - path: ${CHATWOOT_ENV_FILE:-.env.chatwoot.production}
+        required: false
+    environment:
+      FRONTEND_URL: https://${CHATWOOT_DOMAIN:?Set CHATWOOT_DOMAIN}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${CHATWOOT_DB:-chatwoot}
+      POSTGRES_USERNAME: ${CHATWOOT_DB_USER:-chatwoot}
+      POSTGRES_PASSWORD: ${CHATWOOT_DB_PASSWORD:?Set CHATWOOT_DB_PASSWORD}
+      DATABASE_URL: postgresql://${CHATWOOT_DB_USER:-chatwoot}:${CHATWOOT_DB_PASSWORD:?Set CHATWOOT_DB_PASSWORD}@postgres:5432/${CHATWOOT_DB:-chatwoot}
+      REDIS_URL: redis://redis:6379/1
+    command: bundle exec rails s -p 3000 -b 0.0.0.0
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "ruby -rnet/http -e \"response = Net::HTTP.get_response(URI('http://127.0.0.1:3000')); exit(response.code.to_i < 500 ? 0 : 1)\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    networks:
+      - private
+    restart: unless-stopped
+
+  chatwoot-worker:
+    image: ${CHATWOOT_IMAGE:-chatwoot/chatwoot:v4.1.0}
+    env_file:
+      - path: ${CHATWOOT_ENV_FILE:-.env.chatwoot.production}
+        required: false
+    environment:
+      FRONTEND_URL: https://${CHATWOOT_DOMAIN:?Set CHATWOOT_DOMAIN}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${CHATWOOT_DB:-chatwoot}
+      POSTGRES_USERNAME: ${CHATWOOT_DB_USER:-chatwoot}
+      POSTGRES_PASSWORD: ${CHATWOOT_DB_PASSWORD:?Set CHATWOOT_DB_PASSWORD}
+      DATABASE_URL: postgresql://${CHATWOOT_DB_USER:-chatwoot}:${CHATWOOT_DB_PASSWORD:?Set CHATWOOT_DB_PASSWORD}@postgres:5432/${CHATWOOT_DB:-chatwoot}
+      REDIS_URL: redis://redis:6379/1
+    command: bundle exec sidekiq -C config/sidekiq.yml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ps -ef | grep -q '[s]idekiq'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - private
+    restart: unless-stopped
+
+networks:
+  private:
+    internal: false
+
+volumes:
+  allinone_postgres_data:
+  allinone_redis_data:
+  caddy_data:
+  caddy_config:
